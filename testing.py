@@ -1,6 +1,10 @@
 import tensorflow as tf
+from tensorflow.keras.applications.efficientnet_v2 import preprocess_input
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 import matplotlib.pyplot as plt
-import os, re
+import os, re, random
+
+RES_LIST = ["192x192","224x224","331x331","512x512"]
 
 # -------- TFRecord parsing --------
 def parse_example(example_proto, target_size=(224,224), with_label=True):
@@ -16,8 +20,10 @@ def parse_example(example_proto, target_size=(224,224), with_label=True):
     # Decode + preprocess image
     image = tf.io.decode_jpeg(features["image"], channels=3)
     image = tf.image.resize(image, target_size)
-    image = tf.cast(image, tf.float32) / 255.0
+    image = tf.cast(image, tf.float32)
 
+    image = preprocess_input(image)
+    
     if with_label:
         label = features["class"]
         return image, label
@@ -26,7 +32,7 @@ def parse_example(example_proto, target_size=(224,224), with_label=True):
 
 
 # -------- Dataset loader --------
-def make_ds(tfrecord_dir, target_size=(224,224), batch_size=32, with_label=True, repeat=False):
+def make_ds(tfrecord_dir, target_size=(224,224), batch_size=32, with_label=True):
     files = tf.io.gfile.glob(tfrecord_dir + "/*.tfrec")
     if not files:
         raise FileNotFoundError(f"No TFRecord files found in {tfrecord_dir}")
@@ -37,25 +43,20 @@ def make_ds(tfrecord_dir, target_size=(224,224), batch_size=32, with_label=True,
         num_parallel_calls=tf.data.AUTOTUNE
     )
 
-    if repeat:
-        ds = ds.repeat()
-
-    ds = ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
     return ds
 
 
 # -------- Show one image from a dataset --------
-def show_one_from_ds(ds, name):
+def show_one_from_ds(ds, name, count):
+    rand = random.randrange(count)
     try:
-        images, labels_or_ids = next(iter(ds))
-        img = images[0].numpy()
-        lbl = labels_or_ids[0].numpy()
-
-        plt.figure()
-        plt.imshow(img)
-        plt.title(f"{name} - Label/ID: {lbl}")
-        plt.axis("off")
-        plt.show()
+        example = ds.unbatch().skip(rand).take(1)
+        for img, lbl in example:
+            plt.figure()
+            plt.imshow(img.numpy())
+            plt.title(f"{name} - Label/ID: {lbl.numpy()}")
+            plt.axis("off")
+            plt.show()
     except StopIteration:
         print(f"{name}: dataset empty")
 
@@ -69,44 +70,61 @@ def count_from_filenames(path):
 
 # -------- Example usage --------
 if __name__ == "__main__":
-    train_count = count_from_filenames("/kaggle/input/dataset-flowers/dataset/192x192/train")
-    val_count   = count_from_filenames("/kaggle/input/dataset-flowers/dataset/192x192/val")
+    train_count,val_count,test_count = int(0),int(0),int(0)
+    for res in RES_LIST:
+        train_count += count_from_filenames(f"/kaggle/input/dataset-flowers/dataset/{res}/train")
+        val_count   += count_from_filenames(f"/kaggle/input/dataset-flowers/dataset/{res}/val")
+        test_count   += count_from_filenames(f"/kaggle/input/dataset-flowers/dataset/{res}/val")
     
     batch_size = 32
-    
-    train_ds = make_ds(
-        "/kaggle/input/dataset-flowers/dataset/192x192/train",
-        target_size=(192,192),
-        batch_size=batch_size,
-        with_label=True,
-        repeat=True   # ✅ important for TPU
-    )
-    
-    val_ds = make_ds(
-        "/kaggle/input/dataset-flowers/dataset/192x192/val",
-        target_size=(192,192),
-        batch_size=batch_size,
-        with_label=True,
-        repeat=True   # ✅ same here
-    )
-    
-    test_ds = make_ds(
-        "/kaggle/input/dataset-flowers/dataset/192x192/test",
-        target_size=(192,192),
-        batch_size=batch_size,
-        with_label=False,
-        repeat=False
-    )
 
-    show_one_from_ds(train_ds, "Train")
-    show_one_from_ds(val_ds, "Val")
-    show_one_from_ds(test_ds, "Test")
-
-    print("Train size:", count_from_filenames("/kaggle/input/dataset-flowers/dataset/192x192/train"))
-    print("Val size:", count_from_filenames("/kaggle/input/dataset-flowers/dataset/192x192/val"))
-    print("Test size:", count_from_filenames("/kaggle/input/dataset-flowers/dataset/192x192/test"))
+    train = [make_ds(
+        f"/kaggle/input/dataset-flowers/dataset/{res}/train",
+        target_size=(224,224),
+        batch_size=batch_size,
+        with_label=True
+    ) for res in RES_LIST]
     
+    train_ds = train[0]
+    for ds in train[1:]:
+        train_ds = train_ds.concatenate(ds)
+    
+    train_ds = train_ds.shuffle(10000).repeat().batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+    
+    val = [make_ds(
+        f"/kaggle/input/dataset-flowers/dataset/{res}/val",
+        target_size=(224,224),
+        batch_size=batch_size,
+        with_label=True
+    ) for res in RES_LIST]
+    
+    val_ds = val[0]
+    for ds in val[1:]:
+        val_ds = val_ds.concatenate(ds)
 
+    val_ds = val_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    
+    test = [make_ds(
+        f"/kaggle/input/dataset-flowers/dataset/{res}/test",
+        target_size=(224,224),
+        batch_size=batch_size,
+        with_label=True
+    ) for res in RES_LIST]
+    
+    test_ds = val[0]
+    for ds in val[1:]:
+        test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
+
+    test_ds = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    
+    #show_one_from_ds(train_ds, "Train", train_count)
+    #show_one_from_ds(val_ds, "Val", val_count)
+    #show_one_from_ds(test_ds, "Test", test_count)
+
+    print("Train size:", train_count)
+    print("Val size:", val_count)
+    print("Test size:", test_count)
+    
 try:
     tpu = tf.distribute.cluster_resolver.TPUClusterResolver(tpu="local")
     print("✅ TPU detected:", tpu.master())
@@ -124,24 +142,22 @@ print("✅ Using strategy:", strategy)
 print("Devices:", tf.config.list_logical_devices())
 print("Logical devices:", tf.config.list_logical_devices())
 
-NUM_CLASSES = 104  # <-- change to match your dataset
-
+batch_size = 32
 steps_per_epoch = train_count // batch_size
 validation_steps = val_count // batch_size
 
-print("Steps per epoch:", steps_per_epoch)
-print("Validation steps:", validation_steps)
+NUM_CLASSES = 104  # <-- change to match your dataset
 
 with strategy.scope():
-    base_model = tf.keras.applications.ResNet152V2(
-        input_shape=(192,192,3),   # adjust to your dataset image size
-        include_top=False,
-        weights="imagenet"
+    base_model = tf.keras.applications.EfficientNetV2B3(
+    input_shape=(224, 224, 3),   # EfficientNetV2B3 default
+    include_top=False,
+    weights="imagenet"
     )
 
     base_model.trainable = False  # freeze backbone for transfer learning
 
-    inputs = tf.keras.Input(shape=(192,192,3))
+    inputs = tf.keras.Input(shape=(224,224,3))
     x = base_model(inputs, training=False)
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
     x = tf.keras.layers.Dropout(0.3)(x)
@@ -157,6 +173,12 @@ with strategy.scope():
 
 model.summary()
 
+early_stop = EarlyStopping(
+    monitor="val_loss",       # watch validation loss
+    patience=3,               # stop after 3 epochs with no improvement
+    restore_best_weights=True # roll back to best model
+)
+
 with strategy.scope():
     # Freeze backbone (ResNet)
     base_model.trainable = False
@@ -170,10 +192,16 @@ with strategy.scope():
 history_head = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=5,
+    epochs=30,
     steps_per_epoch=steps_per_epoch,
-    validation_steps=validation_steps
+    callbacks=[early_stop]
 )
+
+callbacks = [
+    EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True),
+    ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=2, verbose=1),
+    ModelCheckpoint("best_finetuned.h5", monitor="val_loss", save_best_only=True)
+]
 
 with strategy.scope():
     base_model.trainable = True
@@ -186,10 +214,12 @@ with strategy.scope():
 history_finetune = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=10,
+    epochs=30,
     steps_per_epoch=steps_per_epoch,
-    validation_steps=validation_steps
+    callbacks=callbacks
 )
+
+import matplotlib.pyplot as plt
 
 def plot_history(h1, h2):
     acc = h1.history["accuracy"] + h2.history["accuracy"]
