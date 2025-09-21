@@ -1,0 +1,24 @@
+{% extends 'layout.html' %}
+
+
+{% block title %}
+    Home
+{% endblock title %}
+
+
+{% block content %}
+    <h1 class="h1-title" style="margin-top: 100px">
+        Welcome to the Flower Classification App
+    </h1>
+    <p style="font-size: 4rem; margin-bottom: 5rem; margin-top: 8rem;">
+        Have you found any weird-looking flowers in your garden?<br>
+        Take a picture and go to the <a href="{% url 'predict' %}">Predict</a> page<br>
+        to make sure is not a disguised alien!
+    </p>
+    <p style="font-size: 2rem; margin-top: 20rem;">
+    This app is built with Django and uses EfficientNetV2B3 trained on a flower dataset.<br>
+    For more information about this project please visit my <a href="https://github.com/IlDraghio/Flowers-classification">github</a> repository.
+
+    </p>
+{% endblock content %}
+    

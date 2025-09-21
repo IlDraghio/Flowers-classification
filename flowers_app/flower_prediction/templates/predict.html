@@ -1,0 +1,69 @@
+{% extends 'layout.html' %}
+
+
+{% block title %}
+    Predict
+{% endblock title %}
+
+
+{% block content %}
+<h1 class="h1-title"> Predict </h1><br>
+<p style="margin-top: 3rem;">
+    <form action="{% url 'predict' %}" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <p>
+            <label for="image">Upload an image:</label><br>
+            <input type="file" name="image" id="image" accept="image/*" required onchange="previewImage(event)">
+        </p>
+        <button type="submit">Predict</button>
+
+            {% if prediction %}
+                <div class="preview">
+                <p><strong>{{ prediction }}</strong></p>
+                </div>
+            {% endif %}
+
+            {% if image_data %}
+                <div style="display: flex; gap: 20px; margin-top: 20px; align-items: flex-start; gap: 100px;">
+                <div class="preview">
+                    <p><strong>Uploaded image</strong></p>
+                    <img id="preview-img"
+                        src="data:image/png;base64,{{ image_data }}"
+                        alt="Uploaded image"
+                        style="max-width:300px; margin-top:20px; border:2px solid #5ac4e7; border-radius:10px;">
+                </div>
+            {% else %}
+                <div class="preview">
+                    <p><strong>Uploaded image</strong></p>
+                    <img id="preview-img"
+                        src=""
+                        alt="Image preview"
+                        style="max-width:300px; display:none; margin-top:20px; border:2px solid #5ac4e7; border-radius:10px;">
+                </div>
+            {% endif %}
+
+            {% if image_data %}
+                <div class="preview">
+                    <p><strong>Class sample</strong></p>
+                    <img id="preview-img"
+                        src="data:image/png;base64,{{ example_image_data }}"
+                        alt="Uploaded image"
+                        style="max-width:300px; margin-top:20px; border:2px solid #5ac4e7; border-radius:10px;">
+                </div>
+                </div>
+            {% endif %}
+
+    </form>
+</p>
+
+<script>
+function previewImage(event) {
+    const file = event.target.files[0];
+    const preview = document.getElementById("preview-img");
+    if (file) {
+        preview.src = URL.createObjectURL(file); // temporary URL
+        preview.style.display = "block";
+    }
+}
+</script>
+{% endblock content %}
