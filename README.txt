@@ -92,4 +92,7 @@ Added labels smoothing on top of a different data augmentation for rare classes 
 	
 	http://127.0.0.1:8000/
 
+#The .keras model of the neural network is not uploaded on git. You must run tje kaggle_train.ipynb
+    on kaggle, download it and put it here: \flowers_app\cnn_model
+
    Enjoy!
